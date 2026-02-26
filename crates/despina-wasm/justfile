@@ -1,0 +1,7 @@
+# Build the WASM package (release).
+build:
+    cargo xtask wasm-build
+
+# Build the WASM package (debug).
+build-dev:
+    cargo xtask wasm-build --dev

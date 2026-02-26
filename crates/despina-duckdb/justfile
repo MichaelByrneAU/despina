@@ -1,0 +1,18 @@
+# Build the loadable extension (default: release).
+build profile="release":
+    cargo duckdb-ext build \
+        -m Cargo.toml \
+        -- --no-default-features --features loadable \
+        {{ if profile == "release" { "--release" } else { "" } }}
+
+# Run extension tests.
+test:
+    cargo test -p despina-duckdb
+
+# Install the extension locally.
+install: (build "release")
+    cargo xtask duckdb-install
+
+# Start a shell with the extension loaded.
+shell: install
+    duckdb -unsigned -c "LOAD despina;" -

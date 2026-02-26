@@ -1,0 +1,43 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/despina",
+    "crates/despina-cli",
+    "crates/despina-duckdb",
+    "crates/despina-py",
+    "crates/despina-wasm",
+    "crates/xtask",
+]
+default-members = ["crates/despina"]
+
+[workspace.dependencies]
+arrow = { version = "55", default-features = false, features = ["ipc"] }
+clap = { version = "4", features = ["derive"] }
+color-eyre = "0.6"
+comfy-table = "7"
+criterion = "0.5"
+csv = "1"
+js-sys = "0.3"
+numpy = "0.28.0"
+owo-colors = { version = "4", features = ["supports-colors"] }
+parquet = { version = "55", default-features = false, features = ["arrow", "snap", "zstd"] }
+pyo3 = { version = "0.28.2", features = ["abi3-py39"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "0.2"
+
+[workspace.package]
+version = "0.4.2"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/MichaelByrneAU/despina"
+authors = ["Michael Byrne"]
+
+[profile.test]
+opt-level = 1
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

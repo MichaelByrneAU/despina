@@ -1,0 +1,7 @@
+# Run the CLI with pass-through args.
+run *args:
+    cargo run -p despina-cli -- {{ args }}
+
+# Run CLI tests.
+test:
+    cargo test -p despina-cli

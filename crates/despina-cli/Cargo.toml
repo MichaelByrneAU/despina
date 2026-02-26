@@ -1,0 +1,32 @@
+[package]
+name = "despina-cli"
+description = "Command-line tool for inspecting, validating, and converting .mat matrix files"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme = "README.md"
+categories = ["command-line-utilities", "parser-implementations"]
+keywords = ["matrix", "transport", "cli", "od-matrix", "converter"]
+exclude = ["tests/", "justfile"]
+
+[[bin]]
+name = "despina"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+arrow = { workspace = true }
+clap = { workspace = true }
+color-eyre = { workspace = true }
+comfy-table = { workspace = true }
+csv = { workspace = true }
+# Version is required for `cargo publish` and must be bumped in lockstep with
+# the workspace version.
+despina = { version = "0.4", path = "../despina" }
+owo-colors = { workspace = true }
+parquet = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

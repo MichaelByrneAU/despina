@@ -1,0 +1,25 @@
+[package]
+name = "despina-duckdb"
+description = "DuckDB extension for reading .mat binary matrix files"
+version.workspace = true
+# Edition 2021 required: duckdb crate does not yet support edition 2024.
+edition = "2021"
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme = "README.md"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+bundled = ["duckdb/bundled"]
+loadable = ["duckdb/loadable-extension", "dep:libduckdb-sys"]
+
+[dependencies]
+despina = { path = "../despina" }
+duckdb = { version = "=1.4.4", features = ["vtab"] }
+libduckdb-sys = { version = "=1.4.4", optional = true }

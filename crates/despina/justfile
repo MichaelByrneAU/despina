@@ -1,0 +1,11 @@
+# Run library tests.
+test:
+    cargo test -p despina
+
+# Run benchmarks.
+bench:
+    cargo bench -p despina
+
+# Run benchmarks with target-cpu=native for maximum throughput.
+bench-native:
+    RUSTFLAGS="-C target-cpu=native" cargo bench -p despina

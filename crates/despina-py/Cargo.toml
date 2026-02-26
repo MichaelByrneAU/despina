@@ -1,0 +1,20 @@
+[package]
+name = "despina-py"
+description = "Read and write .mat origin-destination matrix files from Python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme = "README.md"
+publish = false
+
+[lib]
+name = "_despina"
+crate-type = ["cdylib"]
+
+[dependencies]
+despina = { path = "../despina" }
+numpy = { workspace = true }
+pyo3 = { workspace = true }

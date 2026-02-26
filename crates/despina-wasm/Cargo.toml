@@ -1,0 +1,23 @@
+[package]
+name = "despina-wasm"
+description = "Read and write .mat binary matrix files from JavaScript/TypeScript"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["mat", "matrix", "transport", "wasm"]
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+despina = { path = "../despina" }
+js-sys = { workspace = true }
+wasm-bindgen = { workspace = true }
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O", "--all-features"]

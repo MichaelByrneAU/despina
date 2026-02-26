@@ -1,0 +1,20 @@
+# Build and install in the uv environment.
+build:
+    uv run --group dev maturin develop
+
+# Lint with Ruff.
+lint:
+    uv run --group dev ruff check python tests
+
+# Format with Ruff.
+fmt:
+    uv run --group dev ruff format python tests
+
+# Run tests.
+test:
+    uv run --group test pytest
+
+# Build Sphinx documentation.
+docs: build
+    cargo xtask clean-docs
+    uv run --group docs sphinx-build -W -b html docs/source docs/site

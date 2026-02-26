@@ -1,0 +1,96 @@
+[build-system]
+requires = ["maturin>=1.12,<2"]
+build-backend = "maturin"
+
+[project]
+name = "despina"
+dynamic = ["version"]
+description = "Read, analyse, and write .mat origin-destination matrix files"
+readme = "crates/despina-py/README.md"
+requires-python = ">=3.9"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-APACHE", "LICENSE-MIT"]
+authors = [{ name = "Michael Byrne" }]
+keywords = ["matrix", "origin-destination", "transport", "modelling"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
+]
+dependencies = [
+    "numpy>=1.23",
+]
+
+[project.urls]
+Repository = "https://github.com/MichaelByrneAU/despina"
+Documentation = "https://despina.readthedocs.io"
+Issues = "https://github.com/MichaelByrneAU/despina/issues"
+Changelog = "https://github.com/MichaelByrneAU/despina/releases"
+
+[project.optional-dependencies]
+docs = [
+    "sphinx>=7.4,<9",
+    "sphinx-rtd-theme>=3,<4",
+    "numpydoc>=1.8,<2",
+    "sphinx-copybutton>=0.5,<1",
+]
+dataframe = [
+    "pandas>=2,<3",
+]
+parquet = [
+    "pandas>=2,<3",
+    "pyarrow>=14,<20",
+]
+polars = [
+    "polars>=1,<2",
+]
+
+[dependency-groups]
+test = [
+    "pytest>=8,<9",
+    "pandas>=2,<3",
+    "polars>=1,<2",
+]
+bench = [
+    { include-group = "test" },
+    "pytest-benchmark>=5,<6",
+]
+docs = [
+    "sphinx>=7.4,<9",
+    "sphinx-rtd-theme>=3,<4",
+    "numpydoc>=1.8,<2",
+    "sphinx-copybutton>=0.5,<1",
+]
+dev = [
+    { include-group = "test" },
+    { include-group = "bench" },
+    { include-group = "docs" },
+    "maturin>=1.12,<2",
+    "ruff>=0.13,<1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["crates/despina-py/tests"]
+addopts = "--benchmark-disable"
+
+[tool.maturin]
+bindings = "pyo3"
+manifest-path = "crates/despina-py/Cargo.toml"
+python-source = "crates/despina-py/python"
+module-name = "despina._despina"
+version-from-cargo = true

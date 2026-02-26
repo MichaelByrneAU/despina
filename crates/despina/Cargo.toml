@@ -1,0 +1,21 @@
+[package]
+name = "despina"
+description = "Read and write binary matrix (.mat) files"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+documentation = "https://docs.rs/despina"
+readme = "README.md"
+categories = ["parser-implementations", "encoding"]
+keywords = ["matrix", "transport", "binary", "od-matrix"]
+exclude = ["benches/", "tests/", "justfile"]
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "performance"
+harness = false

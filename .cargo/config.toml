@@ -1,0 +1,5 @@
+[alias]
+xtask = "run -p xtask --"
+
+[env]
+DUCKDB_DOWNLOAD_LIB = "1"
