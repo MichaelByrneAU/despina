@@ -85,18 +85,18 @@ const dist = matrix.tableData(1); // Float64Array.
 
 ### DuckDB extension
 
-Query `.mat` files directly from SQL. Not published, build from source.
-
-```sh
-just duckdb-build
-just duckdb-install
-```
+Query `.mat` files directly from SQL.
 
 ```sql
+INSTALL despina FROM 'https://despina.michaelbyrne.au';
+LOAD despina;
+
 SELECT Origin, Destination, DIST_AM
 FROM read_mat('skims.mat', tables := ['DIST_AM'])
 WHERE DIST_AM > 0;
 ```
+
+> Requires the `-unsigned` flag: `duckdb -unsigned`
 
 ## Development
 

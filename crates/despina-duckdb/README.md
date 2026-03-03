@@ -7,32 +7,14 @@ format with `Origin`, `Destination`, and one column per matrix table.
 
 ## Installation
 
-### From GitHub releases
-
-Download the pre-built extension for your platform from the
-[latest release](https://github.com/MichaelByrneAU/despina/releases/latest),
-decompress it, and copy it into DuckDB's extension directory:
-
-```sh
-# Example for macOS ARM (osx_arm64)
-gunzip despina-duckdb-v0.4.0-osx_arm64.duckdb_extension.gz
-mkdir -p ~/.duckdb/extensions/v1.4.4/osx_arm64
-cp despina-duckdb-v0.4.0-osx_arm64.duckdb_extension \
-   ~/.duckdb/extensions/v1.4.4/osx_arm64/despina.duckdb_extension
+```sql
+INSTALL despina FROM 'https://despina.michaelbyrne.au';
+LOAD despina;
 ```
 
-Replace `v1.4.4` with your installed DuckDB version and choose the correct
-platform (`linux_amd64`, `osx_arm64`, or `windows_amd64`).
-
-> **Unsigned extension:** This extension is not signed by DuckDB. You must
-> allow unsigned extensions before loading it:
->
-> ```sql
-> SET allow_unsigned_extensions = true;
-> LOAD despina;
-> ```
->
-> Or start DuckDB with the `-unsigned` flag: `duckdb -unsigned`
+> **Unsigned extension:** This extension is not signed by DuckDB. Start DuckDB
+> with the `-unsigned` flag (`duckdb -unsigned`) or run
+> `SET allow_unsigned_extensions = true;` before loading.
 
 ### Build from source
 
