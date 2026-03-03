@@ -62,8 +62,8 @@ pub(crate) fn decode_row_payload(
 
     // Dispatch order:
     //   1. descriptor 0x00 -> zero row.
-    //   2. descriptor 0xFF -> float64.
-    //   3. type D with anything else -> reject.
+    //   2. descriptor 0xFF -> float64 (all 8 planes).
+    //   3. type D with partial descriptor -> selective float64 planes.
     //   4. type S requires 0xF8 -> float32.
     //   5. everything else -> numeric bitfield.
     match descriptor {
@@ -77,10 +77,7 @@ pub(crate) fn decode_row_payload(
             decode_float64_row(data, zone_count, scratch, values)?;
         }
         _ if matches!(type_code, TypeCode::Float64) => {
-            return Err(Error::new(ErrorKind::InvalidDescriptor {
-                descriptor,
-                type_code,
-            }));
+            decode_float64_selective_row(descriptor, data, zone_count, scratch, values)?;
         }
         DESCRIPTOR_FLOAT32 if matches!(type_code, TypeCode::Float32) => {
             decode_float32_row(data, zone_count, scratch, values)?;
@@ -252,9 +249,9 @@ fn decode_float32_row(
 ///
 /// Eight planes are decompressed in order: B0 through B7. Per-column values are
 /// reassembled as little-endian IEEE 754 binary64 bit patterns. This path
-/// handles both type-D tables (where every non-zero row uses `0xFF`) and the
-/// overflow escape hatch for numeric or float32 tables that occasionally need
-/// full double precision.
+/// handles both type-D tables (which may use `0xFF` for all planes or a partial
+/// descriptor to omit all-zero planes) and the overflow escape hatch for
+/// numeric or float32 tables that occasionally need full double precision.
 fn decode_float64_row(
     data: &[u8],
     zone_count: usize,
@@ -271,6 +268,68 @@ fn decode_float64_row(
     offset += plane::decode_plane(&data[offset..], &mut scratch.plane(B5)[..zone_count])?;
     offset += plane::decode_plane(&data[offset..], &mut scratch.plane(B6)[..zone_count])?;
     offset += plane::decode_plane(&data[offset..], &mut scratch.plane(B7)[..zone_count])?;
+
+    if offset != data.len() {
+        return Err(Error::new(ErrorKind::TrailingBytes));
+    }
+
+    let b0 = scratch.plane_ref(B0);
+    let b1 = scratch.plane_ref(B1);
+    let b2 = scratch.plane_ref(B2);
+    let b3 = scratch.plane_ref(B3);
+    let b4 = scratch.plane_ref(B4);
+    let b5 = scratch.plane_ref(B5);
+    let b6 = scratch.plane_ref(B6);
+    let b7 = scratch.plane_ref(B7);
+
+    for j in 0..zone_count {
+        let bits = u64::from(b0[j])
+            | (u64::from(b1[j]) << 8)
+            | (u64::from(b2[j]) << 16)
+            | (u64::from(b3[j]) << 24)
+            | (u64::from(b4[j]) << 32)
+            | (u64::from(b5[j]) << 40)
+            | (u64::from(b6[j]) << 48)
+            | (u64::from(b7[j]) << 56);
+        values[j] = f64::from_bits(bits);
+    }
+
+    Ok(())
+}
+
+/// Plane slot indices in descriptor-bit order (bit 7 → B0, … , bit 0 → B7).
+const FLOAT64_PLANE_SLOTS: [usize; 8] = [B0, B1, B2, B3, B4, B5, B6, B7];
+
+/// Decode a float64 row body with selective plane presence.
+///
+/// The descriptor byte is an 8-bit field where each bit indicates whether
+/// the corresponding byte plane is present in the compressed stream:
+///
+/// - bit 7 → B0 (least-significant byte of IEEE 754 binary64)
+/// - bit 6 → B1
+/// - …
+/// - bit 0 → B7 (most-significant byte)
+///
+/// Absent planes are zero-filled. This is a compression optimisation: when
+/// all values in a row share the same zero byte in a given position, the
+/// encoder can omit that plane entirely.
+fn decode_float64_selective_row(
+    descriptor: u8,
+    data: &[u8],
+    zone_count: usize,
+    scratch: &mut PlaneScratch,
+    values: &mut [f64],
+) -> crate::Result<()> {
+    let mut offset = 0;
+
+    for (bit_position, &slot) in FLOAT64_PLANE_SLOTS.iter().enumerate() {
+        let flag = 0x80u8 >> bit_position;
+        if descriptor & flag != 0 {
+            offset += plane::decode_plane(&data[offset..], &mut scratch.plane(slot)[..zone_count])?;
+        } else {
+            scratch.plane(slot)[..zone_count].fill(0);
+        }
+    }
 
     if offset != data.len() {
         return Err(Error::new(ErrorKind::TrailingBytes));
@@ -400,20 +459,48 @@ mod tests {
     }
 
     #[test]
-    fn type_d_rejects_non_0xff_descriptor() {
-        // Type D tables must use 0x00 (zero row) or 0xFF (float64).
-        let payload = make_payload(0x88, &[]);
+    fn type_d_selective_b0_and_b4() {
+        // Type D tables accept selective plane descriptors. Descriptor 0x88
+        // means B0 and B4 present, all other planes zero-filled.
+        let mut data = Vec::new();
+        push_encoded_plane(&[0x00], &mut data); // B0
+        push_encoded_plane(&[0x00], &mut data); // B4
+        let payload = make_payload(0x88, &data);
+        let mut scratch = PlaneScratch::new(1);
+        let mut values = vec![999.0];
+        decode_row_payload(TypeCode::Float64, &payload, &mut scratch, &mut values).unwrap();
+        // B0=0x00, B4=0x00, everything else zero → all-zero f64.
+        assert_eq!(values[0], 0.0);
+    }
+
+    #[test]
+    fn type_d_selective_reconstructs_value() {
+        // Encode f64 value 1.0 = 0x3FF0_0000_0000_0000 in LE:
+        // B0=0x00 B1=0x00 B2=0x00 B3=0x00 B4=0x00 B5=0x00 B6=0xF0 B7=0x3F
+        // Descriptor with only B6 and B7 present: bit 1 (B6) + bit 0 (B7)
+        // = 0x03.
+        let mut data = Vec::new();
+        push_encoded_plane(&[0xF0], &mut data); // B6
+        push_encoded_plane(&[0x3F], &mut data); // B7
+        let payload = make_payload(0x03, &data);
+        let mut scratch = PlaneScratch::new(1);
+        let mut values = vec![0.0];
+        decode_row_payload(TypeCode::Float64, &payload, &mut scratch, &mut values).unwrap();
+        assert_eq!(values[0], 1.0);
+    }
+
+    #[test]
+    fn type_d_selective_trailing_bytes_rejected() {
+        let mut data = Vec::new();
+        push_encoded_plane(&[0xF0], &mut data); // B6
+        push_encoded_plane(&[0x3F], &mut data); // B7
+        data.push(0xAA); // trailing garbage
+        let payload = make_payload(0x03, &data);
         let mut scratch = PlaneScratch::new(1);
         let mut values = vec![0.0];
         let err =
             decode_row_payload(TypeCode::Float64, &payload, &mut scratch, &mut values).unwrap_err();
-        assert!(matches!(
-            err.kind(),
-            ErrorKind::InvalidDescriptor {
-                descriptor: 0x88,
-                type_code: TypeCode::Float64
-            }
-        ));
+        assert!(matches!(err.kind(), ErrorKind::TrailingBytes));
     }
 
     #[test]

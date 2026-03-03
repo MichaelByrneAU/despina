@@ -88,17 +88,17 @@ pub(crate) fn encode_row_payload(
         TypeCode::Fixed(decimal_places) => {
             if !encode_numeric_row(decimal_places, values, scratch, payload) {
                 payload.truncate(start_offset);
-                encode_float64_row(values, scratch, payload);
+                encode_float64_row(values, scratch, payload, false);
             }
         }
         TypeCode::Float32 => {
             if !encode_float32_row(values, scratch, payload) {
                 payload.truncate(start_offset);
-                encode_float64_row(values, scratch, payload);
+                encode_float64_row(values, scratch, payload, false);
             }
         }
         TypeCode::Float64 => {
-            encode_float64_row(values, scratch, payload);
+            encode_float64_row(values, scratch, payload, true);
         }
     }
 }
@@ -242,7 +242,20 @@ fn encode_float32_row(values: &[f64], scratch: &mut PlaneScratch, payload: &mut 
 ///
 /// This always succeeds. Any `f64` value (including NaN, infinity, and negative
 /// zero) is representable exactly.
-fn encode_float64_row(values: &[f64], scratch: &mut PlaneScratch, payload: &mut Vec<u8>) {
+///
+/// When `selective` is `true`, planes that are entirely zero across all zones
+/// are omitted from the output and their absence is recorded in the descriptor
+/// byte, matching the selective-plane optimisation used by the reference tool.
+/// This is only valid for type-D tables. When `selective` is `false` (the
+/// overflow escape hatch for numeric and float32 tables), the descriptor is
+/// always `0xFF` and all eight planes are emitted — the decoder requires this
+/// because selective descriptors are only recognised for type-D tables.
+fn encode_float64_row(
+    values: &[f64],
+    scratch: &mut PlaneScratch,
+    payload: &mut Vec<u8>,
+    selective: bool,
+) {
     let zone_count = values.len();
     let [b0, b1, b2, b3, b4, b5, b6, b7] = scratch.all_planes_mut();
     let b0 = &mut b0[..zone_count];
@@ -254,6 +267,17 @@ fn encode_float64_row(values: &[f64], scratch: &mut PlaneScratch, payload: &mut 
     let b6 = &mut b6[..zone_count];
     let b7 = &mut b7[..zone_count];
 
+    // Decompose each f64 into its 8 LE bytes across planes and track which
+    // planes contain any non-zero byte (OR-reduction).
+    let mut any_b0 = 0u8;
+    let mut any_b1 = 0u8;
+    let mut any_b2 = 0u8;
+    let mut any_b3 = 0u8;
+    let mut any_b4 = 0u8;
+    let mut any_b5 = 0u8;
+    let mut any_b6 = 0u8;
+    let mut any_b7 = 0u8;
+
     for j in 0..zone_count {
         let bytes = values[j].to_le_bytes();
         b0[j] = bytes[0];
@@ -264,20 +288,68 @@ fn encode_float64_row(values: &[f64], scratch: &mut PlaneScratch, payload: &mut 
         b5[j] = bytes[5];
         b6[j] = bytes[6];
         b7[j] = bytes[7];
+        any_b0 |= bytes[0];
+        any_b1 |= bytes[1];
+        any_b2 |= bytes[2];
+        any_b3 |= bytes[3];
+        any_b4 |= bytes[4];
+        any_b5 |= bytes[5];
+        any_b6 |= bytes[6];
+        any_b7 |= bytes[7];
     }
 
-    // Emit row prefix.
-    append_row_prefix(payload, DESCRIPTOR_FLOAT64);
+    if selective {
+        // Build descriptor from presence flags: bit 7 → B0, bit 6 → B1, …,
+        // bit 0 → B7.
+        let descriptor = (if any_b0 != 0 { 0x80 } else { 0 })
+            | (if any_b1 != 0 { 0x40 } else { 0 })
+            | (if any_b2 != 0 { 0x20 } else { 0 })
+            | (if any_b3 != 0 { 0x10 } else { 0 })
+            | (if any_b4 != 0 { 0x08 } else { 0 })
+            | (if any_b5 != 0 { 0x04 } else { 0 })
+            | (if any_b6 != 0 { 0x02 } else { 0 })
+            | (if any_b7 != 0 { 0x01 } else { 0 });
 
-    // Compress all eight planes.
-    plane::encode_plane(b0, payload);
-    plane::encode_plane(b1, payload);
-    plane::encode_plane(b2, payload);
-    plane::encode_plane(b3, payload);
-    plane::encode_plane(b4, payload);
-    plane::encode_plane(b5, payload);
-    plane::encode_plane(b6, payload);
-    plane::encode_plane(b7, payload);
+        append_row_prefix(payload, descriptor);
+
+        // Compress only the planes that contain non-zero data.
+        if any_b0 != 0 {
+            plane::encode_plane(b0, payload);
+        }
+        if any_b1 != 0 {
+            plane::encode_plane(b1, payload);
+        }
+        if any_b2 != 0 {
+            plane::encode_plane(b2, payload);
+        }
+        if any_b3 != 0 {
+            plane::encode_plane(b3, payload);
+        }
+        if any_b4 != 0 {
+            plane::encode_plane(b4, payload);
+        }
+        if any_b5 != 0 {
+            plane::encode_plane(b5, payload);
+        }
+        if any_b6 != 0 {
+            plane::encode_plane(b6, payload);
+        }
+        if any_b7 != 0 {
+            plane::encode_plane(b7, payload);
+        }
+    } else {
+        // Overflow escape hatch: always emit 0xFF with all eight planes.
+        append_row_prefix(payload, DESCRIPTOR_FLOAT64);
+
+        plane::encode_plane(b0, payload);
+        plane::encode_plane(b1, payload);
+        plane::encode_plane(b2, payload);
+        plane::encode_plane(b3, payload);
+        plane::encode_plane(b4, payload);
+        plane::encode_plane(b5, payload);
+        plane::encode_plane(b6, payload);
+        plane::encode_plane(b7, payload);
+    }
 }
 
 #[cfg(test)]
@@ -730,5 +802,105 @@ mod tests {
         assert!((decoded[0] - 1.25).abs() < 1e-15);
         assert_eq!(decoded[1], 0.0);
         assert!((decoded[2] - (-2.34)).abs() < 1e-15);
+    }
+
+    #[test]
+    fn float64_selective_omits_zero_planes() {
+        // Small positive integers as f64 have their lower LE bytes all zero.
+        // 1.0 = 0x3FF0_0000_0000_0000 LE: [00,00,00,00,00,00,F0,3F]
+        // 2.0 = 0x4000_0000_0000_0000 LE: [00,00,00,00,00,00,00,40]
+        // 3.0 = 0x4008_0000_0000_0000 LE: [00,00,00,00,00,00,08,40]
+        // Only B6 and B7 are non-zero across all values.
+        let values = vec![1.0, 2.0, 3.0];
+        let mut scratch = PlaneScratch::new(3);
+        let mut payload = Vec::new();
+        encode_row_payload(TypeCode::Float64, &values, &mut scratch, &mut payload);
+
+        // Descriptor: bit 1 (B6) + bit 0 (B7) = 0x03.
+        let descriptor = payload[2];
+        assert_eq!(
+            descriptor, 0x03,
+            "expected selective descriptor 0x03, got {:#04X}",
+            descriptor
+        );
+
+        // Verify round-trip correctness.
+        let mut decoded = vec![0.0; 3];
+        decode_row_payload(TypeCode::Float64, &payload, &mut scratch, &mut decoded).unwrap();
+        assert_eq!(decoded, values);
+    }
+
+    #[test]
+    fn float64_selective_sparse_row_smaller_output() {
+        // A sparse row with mostly zeros and a few small integer values should
+        // produce a smaller payload than an all-planes encoding would.
+        let mut values = vec![0.0; 100];
+        values[10] = 1.0;
+        values[50] = 2.0;
+        values[90] = 4.0;
+        let mut scratch = PlaneScratch::new(100);
+
+        // The all-zero check fires first, so these won't be zero rows. But the
+        // non-zero values are small integers whose lower bytes are zero.
+        let mut selective_payload = Vec::new();
+        encode_row_payload(
+            TypeCode::Float64,
+            &values,
+            &mut scratch,
+            &mut selective_payload,
+        );
+
+        // Verify round-trip.
+        let mut decoded = vec![0.0; 100];
+        decode_row_payload(
+            TypeCode::Float64,
+            &selective_payload,
+            &mut scratch,
+            &mut decoded,
+        )
+        .unwrap();
+        assert_eq!(decoded, values);
+
+        // Compare against full-planes encoding (selective=false).
+        let mut full_payload = Vec::new();
+        encode_float64_row(&values, &mut scratch, &mut full_payload, false);
+
+        assert!(
+            selective_payload.len() < full_payload.len(),
+            "selective ({} bytes) should be smaller than full ({} bytes)",
+            selective_payload.len(),
+            full_payload.len(),
+        );
+    }
+
+    #[test]
+    fn float64_selective_single_value_round_trip() {
+        // 42.0 = 0x4045_0000_0000_0000 — only B6 and B7 are non-zero.
+        let values = vec![42.0];
+        let mut scratch = PlaneScratch::new(1);
+        let mut payload = Vec::new();
+        encode_row_payload(TypeCode::Float64, &values, &mut scratch, &mut payload);
+
+        assert_eq!(payload[2], 0x03, "expected descriptor 0x03 for 42.0");
+
+        let mut decoded = vec![0.0];
+        decode_row_payload(TypeCode::Float64, &payload, &mut scratch, &mut decoded).unwrap();
+        assert_eq!(decoded, values);
+    }
+
+    #[test]
+    fn float64_fallback_uses_full_descriptor() {
+        // When numeric overflow forces a float64 fallback, the descriptor must
+        // be 0xFF regardless of plane occupancy, because the decoder only
+        // recognises selective descriptors for type-D tables.
+        let values = vec![4_294_967_296.0]; // overflows u32
+        let mut scratch = PlaneScratch::new(1);
+        let mut payload = Vec::new();
+        encode_row_payload(TypeCode::Fixed(0), &values, &mut scratch, &mut payload);
+        assert_eq!(payload[2], 0xFF, "fallback must use full 0xFF descriptor");
+
+        let mut decoded = vec![0.0];
+        decode_row_payload(TypeCode::Fixed(0), &payload, &mut scratch, &mut decoded).unwrap();
+        assert_eq!(decoded[0], 4_294_967_296.0);
     }
 }
